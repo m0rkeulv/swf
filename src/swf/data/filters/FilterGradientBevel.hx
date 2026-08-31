@@ -1,12 +1,10 @@
 package swf.data.filters;
 
 import swf.utils.ColorUtils;
+import swf.exporters.core.FilterType;
 import openfl.filters.BitmapFilter;
-import openfl.filters.BitmapFilterType;
-#if flash
-import flash.filters.GradientBevelFilter; // Not supported on native yet
+import openfl.filters.GradientBevelFilter;
 
-#end
 class FilterGradientBevel extends FilterGradientGlow implements IFilter
 {
 	public function new(id:Int)
@@ -16,38 +14,36 @@ class FilterGradientBevel extends FilterGradientGlow implements IFilter
 
 	override private function get_filter():BitmapFilter
 	{
-		var gradientGlowColors:Array<Int> = [];
-		var gradientGlowAlphas:Array<Float> = [];
-		var gradientGlowRatios:Array<Float> = [];
-		for (i in 0...numColors)
-		{
-			gradientGlowColors.push(ColorUtils.rgb(gradientColors[i]));
-			gradientGlowAlphas.push(ColorUtils.alpha(gradientColors[i]));
-			gradientGlowRatios.push(gradientRatios[i]);
-		}
-		#if flash
-		var filterType:BitmapFilterType;
-		#else
-		var filterType:String;
-		#end
-		if (onTop)
-		{
-			filterType = BitmapFilterType.FULL;
-		}
-		else
-		{
-			filterType = (innerShadow) ? BitmapFilterType.INNER : BitmapFilterType.OUTER;
-		}
-		#if flash
-		return new GradientBevelFilter(distance, angle, gradientGlowColors, gradientGlowAlphas, gradientGlowRatios, blurX, blurY, strength, passes,
-			Std.string(filterType), knockout);
-		#else
 		#if ((cpp || neko) && openfl_legacy)
 		return new BitmapFilter("");
 		#else
-		return new BitmapFilter();
+		var colors:Array<Int> = [];
+		var alphas:Array<Float> = [];
+		var ratios:Array<Int> = [];
+		for (i in 0...numColors)
+		{
+			colors.push(ColorUtils.rgb(gradientColors[i]));
+			alphas.push(ColorUtils.alpha(gradientColors[i]));
+			ratios.push(gradientRatios[i]);
+		}
+		var filterType = onTop ? "full" : (innerShadow ? "inner" : "outer");
+		return new GradientBevelFilter(distance, angle * 180 / Math.PI, colors, alphas, ratios, blurX, blurY, strength, passes, filterType, knockout);
 		#end
-		#end
+	}
+
+	override private function get_type():FilterType
+	{
+		var colors:Array<Int> = [];
+		var alphas:Array<Float> = [];
+		var ratios:Array<Int> = [];
+		for (i in 0...numColors)
+		{
+			colors.push(ColorUtils.rgb(gradientColors[i]));
+			alphas.push(ColorUtils.alpha(gradientColors[i]));
+			ratios.push(gradientRatios[i]);
+		}
+		var filterType = onTop ? "full" : (innerShadow ? "inner" : "outer");
+		return FilterType.GradientBevelFilter(distance, angle * 180 / Math.PI, colors, alphas, ratios, blurX, blurY, strength, passes, filterType, knockout);
 	}
 
 	override public function clone():IFilter
