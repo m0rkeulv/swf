@@ -4,6 +4,7 @@ import swf.utils.ColorUtils;
 import swf.exporters.core.FilterType;
 import openfl.filters.BitmapFilter;
 import openfl.filters.GradientBevelFilter;
+import openfl.filters.BitmapFilterType;
 
 class FilterGradientBevel extends FilterGradientGlow implements IFilter
 {
@@ -17,17 +18,17 @@ class FilterGradientBevel extends FilterGradientGlow implements IFilter
 		#if ((cpp || neko) && openfl_legacy)
 		return new BitmapFilter("");
 		#else
-		var colors:Array<Int> = [];
-		var alphas:Array<Float> = [];
-		var ratios:Array<Int> = [];
+		var gradientBevelColors:Array<Int> = [];
+		var gradientBevelAlphas:Array<Float> = [];
+		var gradientBevelRatios:Array<Int> = [];
 		for (i in 0...numColors)
 		{
-			colors.push(ColorUtils.rgb(gradientColors[i]));
-			alphas.push(ColorUtils.alpha(gradientColors[i]));
-			ratios.push(gradientRatios[i]);
+			gradientBevelColors.push(ColorUtils.rgb(gradientColors[i]));
+			gradientBevelAlphas.push(ColorUtils.alpha(gradientColors[i]));
+			gradientBevelRatios.push(gradientRatios[i]);
 		}
-		var filterType = onTop ? "full" : (innerShadow ? "inner" : "outer");
-		return new GradientBevelFilter(distance, angle * 180 / Math.PI, colors, alphas, ratios, blurX, blurY, strength, passes, filterType, knockout);
+		var filterType = getBitmapFilterType();
+		return new GradientBevelFilter(distance, angle * 180 / Math.PI, gradientBevelColors, gradientBevelAlphas, gradientBevelRatios, blurX, blurY, strength, passes, filterType, knockout);
 		#end
 	}
 
@@ -42,8 +43,8 @@ class FilterGradientBevel extends FilterGradientGlow implements IFilter
 			alphas.push(ColorUtils.alpha(gradientColors[i]));
 			ratios.push(gradientRatios[i]);
 		}
-		var filterType = onTop ? "full" : (innerShadow ? "inner" : "outer");
-		return FilterType.GradientBevelFilter(distance, angle * 180 / Math.PI, colors, alphas, ratios, blurX, blurY, strength, passes, filterType, knockout);
+		var filterType = getBitmapFilterType();
+		return GradientBevelFilter(distance, angle * 180 / Math.PI, colors, alphas, ratios, blurX, blurY, strength, passes, filterType, knockout);
 	}
 
 	override public function clone():IFilter
@@ -65,7 +66,7 @@ class FilterGradientBevel extends FilterGradientGlow implements IFilter
 		filter.distance = distance;
 		filter.strength = strength;
 		filter.passes = passes;
-		filter.innerShadow = innerShadow;
+		filter.inner = inner;
 		filter.knockout = knockout;
 		filter.compositeSource = compositeSource;
 		filter.onTop = onTop;
