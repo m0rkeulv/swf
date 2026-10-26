@@ -1,3 +1,8 @@
+Unreleased
+----------
+
+* The Animate exporter writes the same bundle on every runtime: symbols by id, removed objects by id, JSON fields in a fixed order, and a font's advance table keeps its gaps as null (HashLink wrote 0)
+
 3.4.0 (11/11/2025)
 ------------------
 
