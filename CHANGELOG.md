@@ -1,6 +1,7 @@
 Unreleased
 ----------
 
+* The tool can run on HashLink (`lime config SWF_RUNTIME hl`, `SWF_RUNTIME=hl` or `-hl`), using the HashLink that Lime ships, or as a native executable compiled from HL/C (`hlc`, built by `haxelib run swf rebuild hlc`); `haxelib run swf rebuild` builds the tool for every runtime
 * The Animate exporter writes the same bundle on every runtime: symbols by id, removed objects by id, JSON fields in a fixed order, and a font's advance table keeps its gaps as null (HashLink wrote 0)
 
 3.4.0 (11/11/2025)

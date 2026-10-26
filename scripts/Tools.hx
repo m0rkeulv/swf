@@ -493,6 +493,16 @@ class Tools
 	{
 		var arguments = Sys.args();
 
+		#if neko
+		// the same tool on HashLink or as a native executable, when SWF_RUNTIME or a flag asks for it (see ToolRuntime)
+		var elsewhere = ToolRuntime.exitCode(arguments);
+		if (elsewhere != null) Sys.exit(elsewhere);
+		#elseif hl
+		// hxp detects console colors through lime's CFFI, which HashLink does not have: decide as its
+		// fallback does, so that it never gets there
+		@:privateAccess Log.colorSupported = (Sys.getEnv("TERM") == "xterm" || Sys.getEnv("ANSICON") != null);
+		#end
+
 		#if !nodejs
 		if (arguments.length > 0)
 		{
@@ -581,6 +591,16 @@ class Tools
 		if (words.length == 0 || words[0] == "help" || targetFlags.exists("-h") || targetFlags.exists("-help") || targetFlags.exists("--help"))
 		{
 			displayHelp();
+		}
+		else if (words[0] == "rebuild")
+		{
+			if (targetFlags.exists("-v") || targetFlags.exists("-verbose"))
+			{
+				Log.verbose = true;
+				displayInfo();
+			}
+
+			Rebuild.run(words[1], Path.directory(Sys.programPath()));
 		}
 		else if (words[0] == "process" || words[0] == "generate")
 		{
@@ -696,6 +716,7 @@ class Tools
 
 		Log.println("  \x1b[1m" + "process" + "\x1b[0m -- " + "Converts *.swf and *.swc files into an OpenFL library");
 		Log.println("  \x1b[1m" + "generate" + "\x1b[0m -- " + "Generates Haxe linkage classes (implies 'process')");
+		Log.println("  \x1b[1m" + "rebuild" + "\x1b[0m -- " + "Builds the tool's runtimes: neko, hl, hlc or all (default)");
 
 		Log.println("");
 		Log.println(" " + Log.accentColor + "Flags:" + Log.resetColor);
@@ -704,6 +725,7 @@ class Tools
 		Log.println("  \x1b[1m-v\x1b[0;3m/\x1b[0m\x1b[1m-verbose\x1b[0m -- Print additional information (when available)");
 		Log.println("  \x1b[1m-h\x1b[0m/\x1b[0m\x1b[1m-help\x1b[0m -- Display help information (if available)");
 		Log.println("  \x1b[1m-nocolor\x1b[0m -- Disable ANSI format codes in output");
+		Log.println("  \x1b[1m-neko\x1b[0m/\x1b[1m-hl\x1b[0m/\x1b[1m-hlc\x1b[0m -- Run on that runtime (also SWF_RUNTIME or 'lime config SWF_RUNTIME')");
 
 		// Log.println("");
 		// Log.println(" " + Log.accentColor + "Options:" + Log.resetColor);
