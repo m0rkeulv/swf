@@ -8,6 +8,7 @@ import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
 import swf.exporters.animate.AnimateBinaryWriter.*;
 import swf.exporters.animate.AnimateShapeCommand;
+import swf.exporters.animate.AnimateStaticTextSymbol.StaticTextRecord;
 import swf.exporters.core.FilterType;
 
 typedef AnimateBinaryDocument =
@@ -59,11 +60,15 @@ class AnimateBinaryReader
 		var type = input.readByte();
 		input.readInt32(); // the body length, for a reader that skips symbols
 		var id = nint();
+		// the exporter names every symbol that has a linkage, but the JSON loader reads the name for
+		// bitmaps, buttons and sprites only (__parseBitmap, __parseButton, __parseSprite), so a font,
+		// shape or text exported for ActionScript is not registered by class name there, nor here
 		var className = str();
 		var symbol:AnimateSymbol = switch (type)
 		{
 			case 0: // BITMAP
 				var bitmap = new AnimateBitmapSymbol();
+				bitmap.className = className;
 				bitmap.path = str();
 				bitmap.alpha = str();
 				var smooth = nbool();
@@ -71,6 +76,7 @@ class AnimateBinaryReader
 				bitmap;
 			case 1: // BUTTON
 				var button = new AnimateButtonSymbol();
+				button.className = className;
 				button.downState = optionalSprite();
 				button.hitState = optionalSprite();
 				button.overState = optionalSprite();
@@ -85,14 +91,15 @@ class AnimateBinaryReader
 				shape.commands = commands();
 				shape;
 			case 5: // SPRITE
-				spriteBody(new AnimateSpriteSymbol());
+				var sprite = new AnimateSpriteSymbol();
+				sprite.className = className;
+				spriteBody(sprite);
 			case 6: // STATIC_TEXT
 				staticText();
 			default:
 				throw 'AnimateBinaryReader: unknown symbol type $type';
 		}
 		if (id != null) symbol.id = id;
-		symbol.className = className;
 		return symbol;
 	}
 
@@ -231,26 +238,26 @@ class AnimateBinaryReader
 		var recordCount = input.readInt32();
 		if (recordCount >= 0)
 		{
-			var records:Array<Dynamic> = [];
+			symbol.records = [];
 			for (i in 0...recordCount)
 			{
-				// the JSON gives these as anonymous objects holding only the fields the exporter set
-				var record:Dynamic = {};
+				// read in the order written; a field the exporter did not set is null, as reading it
+				// from the JSON record, which leaves it out, gives null
 				var advances = ints();
-				if (advances != null) Reflect.setField(record, "advances", advances);
 				var color = nint();
-				if (color != null) Reflect.setField(record, "color", color);
 				var fontHeight = nint();
-				if (fontHeight != null) Reflect.setField(record, "fontHeight", fontHeight);
 				var fontID = nint();
-				if (fontID != null) Reflect.setField(record, "fontID", fontID);
 				var glyphs = ints();
-				if (glyphs != null) Reflect.setField(record, "glyphs", glyphs);
-				var offset = ints();
-				if (offset != null) Reflect.setField(record, "offset", offset);
-				records.push(record);
+				var record:StaticTextRecord = {
+					advances: advances,
+					color: color,
+					fontHeight: fontHeight,
+					fontID: fontID,
+					glyphs: glyphs,
+					offset: ints()
+				};
+				symbol.records.push(record);
 			}
-			symbol.records = cast records;
 		}
 		return symbol;
 	}
@@ -266,7 +273,8 @@ class AnimateBinaryReader
 				case 0:
 					var bitmap = input.readInt32();
 					var m = matrix();
-					commands.push(BeginBitmapFill(bitmap, m, nbool() == true, nbool() == true));
+					var repeat = nbool();
+					commands.push(BeginBitmapFill(bitmap, m, repeat, nbool()));
 				case 1:
 					var color = input.readInt32();
 					commands.push(BeginFill(color, input.readDouble()));

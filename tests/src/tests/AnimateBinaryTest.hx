@@ -5,6 +5,7 @@ import openfl.utils.Assets;
 import swf.exporters.animate.AnimateBinaryReader;
 import swf.exporters.animate.AnimateBinaryWriter;
 import swf.exporters.animate.AnimateLibrary;
+import swf.exporters.animate.AnimateShapeSymbol;
 import utest.Assert;
 import utest.Test;
 
@@ -41,6 +42,33 @@ class AnimateBinaryTest extends Test
 		for (symbol in decoded.symbols)
 			decodedSymbols.set(symbol.id, symbol);
 		assertSameSymbols(json, decodedSymbols, cast decoded.symbols[decoded.rootIndex]);
+	}
+
+	/**
+		The exporter names every symbol that has a linkage, but the JSON loader only reads the name of
+		bitmaps, buttons and sprites, so a shape exported for ActionScript is not registered by its class
+		name; the binary reader must agree, or the two bundles would register different classes.
+	**/
+	public function testClassNameOnlyWhereJsonReadsIt():Void
+	{
+		var json:AnimateLibrary = cast Assets.getLibrary("shapes_json");
+		var document:Dynamic = Json.parse(json.getText("data.json"));
+		var symbolArray:Array<Dynamic> = document.symbols;
+		var shapeId = -1;
+		for (symbol in json.symbols)
+			if (Std.isOfType(symbol, AnimateShapeSymbol)) shapeId = symbol.id;
+		Assert.isTrue(shapeId >= 0);
+		for (symbol in symbolArray)
+			if (symbol.id == shapeId) symbol.className = "shapes.Rect";
+
+		var decoded = AnimateBinaryReader.read(AnimateBinaryWriter.write(document.frameRate, document.uuid, symbolArray));
+		var named = [];
+		for (symbol in decoded.symbols)
+		{
+			if (symbol.id == shapeId) Assert.isNull(symbol.className);
+			if (symbol.className != null) named.push(symbol.className);
+		}
+		Assert.equals(1, named.length); // the sprite exported for ActionScript keeps its name
 	}
 
 	/** Every symbol of `json` must have an equal counterpart, and the roots must be equal. **/
