@@ -10,6 +10,7 @@ class TestMain extends Sprite
 
 		var runner = new Runner();
 		runner.addCase(new tests.ShapesTest());
+		runner.addCase(new tests.AnimateBinaryTest());
 
 		Report.create(runner);
 

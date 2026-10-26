@@ -638,7 +638,7 @@ class Tools
 
 						Log.info("\x1b[1mProcessing file:\x1b[0m " + fileLabel, " - \x1b[1mProcessing file:\x1b[0m " + file + " \x1b[3;37m->\x1b[0m " + output);
 
-						processFile(file, output, filePrefix, generate);
+						processFile(file, output, filePrefix, generate, targetFlags.exists("binary"));
 					}
 				}
 				else
@@ -655,7 +655,7 @@ class Tools
 						outputPath = Path.combine(outputPath, Path.withoutExtension(Path.withoutDirectory(inputPath)) + ".zip");
 					}
 
-					processFile(inputPath, outputPath, filePrefix, generate);
+					processFile(inputPath, outputPath, filePrefix, generate, targetFlags.exists("binary"));
 				}
 			}
 			else if (words.length > 2)
@@ -704,6 +704,7 @@ class Tools
 		Log.println("  \x1b[1m-v\x1b[0;3m/\x1b[0m\x1b[1m-verbose\x1b[0m -- Print additional information (when available)");
 		Log.println("  \x1b[1m-h\x1b[0m/\x1b[0m\x1b[1m-help\x1b[0m -- Display help information (if available)");
 		Log.println("  \x1b[1m-nocolor\x1b[0m -- Disable ANSI format codes in output");
+		Log.println("  \x1b[1m-binary\x1b[0m -- Write the animate-binary document (data.bin) instead of data.json");
 
 		// Log.println("");
 		// Log.println(" " + Log.accentColor + "Options:" + Log.resetColor);
@@ -749,7 +750,7 @@ class Tools
 		}
 	}
 
-	private static function processFile(sourcePath:String, targetPath:String, prefix:String = null, generate:Bool = false):Bool
+	private static function processFile(sourcePath:String, targetPath:String, prefix:String = null, generate:Bool = false, binary:Bool = false):Bool
 	{
 		if (targetPath == null)
 		{
@@ -761,7 +762,7 @@ class Tools
 		var bytes:ByteArray = File.getBytes(sourcePath);
 		bytes = readSWC(bytes);
 		var swf = new SWF(bytes);
-		var exporter = new AnimateLibraryExporter(swf.data, targetPath);
+		var exporter = new AnimateLibraryExporter(swf.data, targetPath, binary);
 
 		if (generate)
 		{
@@ -1005,7 +1006,7 @@ class Tools
 				// output.assets.push (new Asset (library.sourcePath, "libraries/" + library.name + ".swf", AssetType.BINARY));))
 			}
 			// #if !nodejs
-			else if (type == "animate" || type == "swf" || type == "swflite" || type == "swf_lite" || type == "swc")
+			else if (type == "animate" || type == "animate-binary" || type == "swf" || type == "swflite" || type == "swf_lite" || type == "swc")
 			{
 				if (!FileSystem.exists(library.sourcePath))
 				{
@@ -1015,6 +1016,8 @@ class Tools
 
 				Log.info("", " - \x1b[1mProcessing library:\x1b[0m " + library.sourcePath + " [SWF]");
 
+				// animate-binary: the same bundle with data.bin in place of data.json, cached under its own name
+				var binary = (type == "animate-binary");
 				var cacheAvailable = false;
 				var cacheDirectory = null;
 				var cacheFile = null;
@@ -1022,7 +1025,7 @@ class Tools
 				if (targetDirectory != null)
 				{
 					cacheDirectory = targetDirectory + "/obj/libraries";
-					cacheFile = cacheDirectory + "/" + library.name + ".zip";
+					cacheFile = cacheDirectory + "/" + library.name + (binary ? ".animate-binary.zip" : ".zip");
 
 					if (FileSystem.exists(cacheFile))
 					{
@@ -1051,7 +1054,7 @@ class Tools
 						var bytes:ByteArray = File.getBytes(library.sourcePath);
 						bytes = readSWC(bytes);
 						var swf = new SWF(bytes);
-						var exporter = new AnimateLibraryExporter(swf.data, cacheFile);
+						var exporter = new AnimateLibraryExporter(swf.data, cacheFile, binary);
 
 						if (library.generate != false)
 						{

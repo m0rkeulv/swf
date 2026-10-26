@@ -1,3 +1,8 @@
+Unreleased
+----------
+
+* Added the `animate-binary` library type: the Animate bundle with a binary document (`data.bin`) that loads without a JSON parse, for native targets; `animate` is unchanged. Also `haxelib run swf process -binary`
+
 3.4.0 (11/11/2025)
 ------------------
 

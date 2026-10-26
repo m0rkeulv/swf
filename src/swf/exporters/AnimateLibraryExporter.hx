@@ -7,6 +7,7 @@ import swf.data.consts.BlendMode;
 import swf.data.filters.IFilter;
 import swf.data.SWFButtonRecord;
 import swf.data.SWFSymbol;
+import swf.exporters.animate.AnimateBinaryWriter;
 import swf.exporters.ShapeBitmapExporter;
 import swf.exporters.ShapeBitmapExporter.BitmapFill;
 import swf.exporters.ShapeCommandExporter;
@@ -72,7 +73,8 @@ class AnimateLibraryExporter
 	private var symbolsByTagID:Map<Int, SWFSymbol>;
 	private var targetPath:String;
 
-	public function new(swfData:SWFRoot, targetPath:String)
+	/** With `binary`, the bundle's document is `data.bin` (see `AnimateBinaryWriter`) instead of `data.json`. **/
+	public function new(swfData:SWFRoot, targetPath:String, binary:Bool = false)
 	{
 		this.swfData = swfData;
 		this.targetPath = targetPath;
@@ -106,8 +108,9 @@ class AnimateLibraryExporter
 
 		var uuid = StringTools.generateUUID(20);
 
+		var dataName = binary ? "data.bin" : "data.json";
 		manifestData.libraryType = "swf.exporters.animate.AnimateLibrary";
-		manifestData.libraryArgs = ["data.json", uuid];
+		manifestData.libraryArgs = [dataName, uuid];
 		manifestData.version = 3;
 		manifestData.assets = [];
 
@@ -120,15 +123,24 @@ class AnimateLibraryExporter
 			processSymbol(symbol);
 		}
 
-		var libraryJSON = libraryData.serialize();
-		var bytes = new ByteArray();
-		bytes.writeUTFBytes(libraryJSON);
+		// the same document either way: as JSON text, or as the bytes AnimateBinaryWriter makes of it
+		var bytes:ByteArray;
+		if (binary)
+		{
+			bytes = ByteArray.fromBytes(AnimateBinaryWriter.write(libraryData.frameRate, libraryData.uuid, libraryData.symbolList()));
+		}
+		else
+		{
+			var libraryJSON = libraryData.serialize();
+			bytes = new ByteArray();
+			bytes.writeUTFBytes(libraryJSON);
+		}
 		var crc32 = Crc32.make(bytes);
 		var fileSize = bytes.length;
 		bytes.deflate();
 
 		var entry:Entry = {
-			fileName: "data.json",
+			fileName: dataName,
 			fileSize: fileSize,
 			fileTime: Date.now(),
 			compressed: true,
@@ -138,8 +150,8 @@ class AnimateLibraryExporter
 		};
 		outputList.add(entry);
 		manifestData.assets.push({
-			path: "data.json",
-			type: AssetType.TEXT
+			path: dataName,
+			type: binary ? AssetType.BINARY : AssetType.TEXT
 		});
 
 		// var manifestJSON = manifestData.serialize();
@@ -1506,18 +1518,20 @@ private class SWFDocument
 		output.uuid = uuid;
 		output.root = 0;
 		output.version = 0.1;
-
-		var symbolArray = new Array<Dynamic>();
-		symbolArray.push(root);
-
-		for (key in symbols.keys())
-		{
-			symbolArray.push(symbols.get(key));
-		}
-
-		output.symbols = symbolArray;
+		output.symbols = symbolList();
 
 		return Json.stringify(output);
+	}
+
+	/** The root, then the other symbols: the order both documents store. **/
+	public function symbolList():Array<Dynamic>
+	{
+		var list:Array<Dynamic> = [root];
+		for (key in symbols.keys())
+		{
+			list.push(symbols.get(key));
+		}
+		return list;
 	}
 }
 
