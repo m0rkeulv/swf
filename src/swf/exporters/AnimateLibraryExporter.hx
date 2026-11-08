@@ -7,7 +7,13 @@ import swf.data.consts.BlendMode;
 import swf.data.filters.IFilter;
 import swf.data.SWFButtonRecord;
 import swf.data.SWFSymbol;
-import swf.exporters.animate.AnimateJsonWriter;
+import swf.exporters.animate.AnimateFilterType;
+import swf.exporters.animate.AnimateFrameObjectType;
+import swf.exporters.animate.AnimateShapeCommandType;
+import swf.exporters.animate.AnimateSymbolType;
+import swf.exporters.animate.binary.AnimateBinaryWriter;
+import swf.exporters.animate.document.*;
+import swf.exporters.animate.json.AnimateJsonWriter;
 import swf.exporters.ShapeBitmapExporter;
 import swf.exporters.ShapeBitmapExporter.BitmapFill;
 import swf.exporters.ShapeCommandExporter;
@@ -65,7 +71,7 @@ using swf.exporters.FrameScriptParser.AVM2;
 
 class AnimateLibraryExporter
 {
-	private var libraryData:SWFDocument;
+	private var libraryData:AnimateDocument;
 	private var manifestData:AssetManifest;
 	private var outputList:List<Entry>;
 	private var swfData:SWFRoot;
@@ -73,7 +79,8 @@ class AnimateLibraryExporter
 	private var symbolsByTagID:Map<Int, SWFSymbol>;
 	private var targetPath:String;
 
-	public function new(swfData:SWFRoot, targetPath:String)
+	/** With `binary`, the bundle's document is `data.bin` (see `AnimateBinaryWriter`) instead of `data.json`. **/
+	public function new(swfData:SWFRoot, targetPath:String, binary:Bool = false)
 	{
 		this.swfData = swfData;
 		this.targetPath = targetPath;
@@ -102,13 +109,14 @@ class AnimateLibraryExporter
 		}
 
 		manifestData = new AssetManifest();
-		libraryData = new SWFDocument();
+		libraryData = new AnimateDocument();
 		outputList = new List();
 
 		var uuid = StringTools.generateUUID(20);
 
+		var dataName = binary ? "data.bin" : "data.json";
 		manifestData.libraryType = "swf.exporters.animate.AnimateLibrary";
-		manifestData.libraryArgs = ["data.json", uuid];
+		manifestData.libraryArgs = [dataName, uuid];
 		manifestData.version = 3;
 		manifestData.assets = [];
 
@@ -121,15 +129,24 @@ class AnimateLibraryExporter
 			processSymbol(symbol);
 		}
 
-		var libraryJSON = libraryData.serialize();
-		var bytes = new ByteArray();
-		bytes.writeUTFBytes(libraryJSON);
+		// the same document either way: as JSON text, or as the bytes AnimateBinaryWriter makes of it
+		var bytes:ByteArray;
+		if (binary)
+		{
+			bytes = ByteArray.fromBytes(AnimateBinaryWriter.write(libraryData.frameRate, libraryData.uuid, libraryData.symbolList()));
+		}
+		else
+		{
+			var libraryJSON = AnimateJsonWriter.stringify(libraryData);
+			bytes = new ByteArray();
+			bytes.writeUTFBytes(libraryJSON);
+		}
 		var crc32 = Crc32.make(bytes);
 		var fileSize = bytes.length;
 		bytes.deflate();
 
 		var entry:Entry = {
-			fileName: "data.json",
+			fileName: dataName,
 			fileSize: fileSize,
 			fileTime: Date.now(),
 			compressed: true,
@@ -139,12 +156,12 @@ class AnimateLibraryExporter
 		};
 		outputList.add(entry);
 		manifestData.assets.push({
-			path: "data.json",
-			type: AssetType.TEXT
+			path: dataName,
+			type: binary ? AssetType.BINARY : AssetType.TEXT
 		});
 
 		// var manifestJSON = manifestData.serialize();
-		var manifestJSON = AnimateJsonWriter.stringify(manifestData);
+		var manifestJSON = AnimateJsonWriter.value(manifestData);
 		var bytes = new ByteArray();
 		bytes.writeUTFBytes(manifestJSON);
 		var crc32 = Crc32.make(bytes);
@@ -192,10 +209,9 @@ class AnimateLibraryExporter
 		outputFile.close();
 	}
 
-	private function addButton(tag:IDefinitionTag):Dynamic
+	private function addButton(tag:IDefinitionTag):AnimateDocumentButton
 	{
-		var symbol:Dynamic = {};
-		symbol.type = SWFSymbolType.BUTTON;
+		var symbol = new AnimateDocumentButton();
 
 		if (#if (haxe_ver >= 4.2) Std.isOfType #else Std.is #end (tag, IDefinitionTag))
 		{
@@ -206,19 +222,17 @@ class AnimateLibraryExporter
 		{
 			if (records.length > 0)
 			{
-				var sprite:Dynamic = {};
-				sprite.type = SWFSymbolType.SPRITE;
-				sprite.frames = [];
+				var sprite = new AnimateDocumentSprite();
 
-				var frame:Dynamic = {};
+				var frame = new AnimateDocumentFrame();
 				frame.objects = [];
 
 				for (i in 0...records.length)
 				{
 					var object = records[i];
 
-					var frameObject:Dynamic = {};
-					frameObject.type = SWFFrameObjectType.CREATE;
+					var frameObject = new AnimateDocumentFrameObject();
+					frameObject.type = AnimateFrameObjectType.CREATE;
 					frameObject.symbol = object.characterId;
 					frameObject.id = i;
 
@@ -288,7 +302,7 @@ class AnimateLibraryExporter
 		return symbol;
 	}
 
-	private function addBitmap(tag:IDefinitionTag):Dynamic
+	private function addBitmap(tag:IDefinitionTag):AnimateDocumentBitmap
 	{
 		var alphaByteArray = null;
 		var byteArray = null;
@@ -432,8 +446,7 @@ class AnimateLibraryExporter
 
 		if (byteArray != null)
 		{
-			var symbol:Dynamic = {};
-			symbol.type = SWFSymbolType.BITMAP;
+			var symbol = new AnimateDocumentBitmap();
 			symbol.id = tag.characterId;
 			symbol.path = "symbols/" + symbol.id + "." + (type == PNG ? "png" : "jpg");
 
@@ -482,15 +495,13 @@ class AnimateLibraryExporter
 		return null;
 	}
 
-	private function addFont(tag:IDefinitionTag):Dynamic
+	private function addFont(tag:IDefinitionTag):AnimateDocumentFont
 	{
 		if (#if (haxe_ver >= 4.2) Std.isOfType #else Std.is #end (tag, TagDefineFont2))
 		{
 			var defineFont:TagDefineFont2 = cast tag;
-			var symbol:Dynamic = {};
-			symbol.type = SWFSymbolType.FONT;
+			var symbol = new AnimateDocumentFont();
 			symbol.id = defineFont.characterId;
-			symbol.glyphs = new Array<Array<Dynamic>>();
 
 			// for (i in 0...defineFont.glyphShapeTable.length) {
 			//
@@ -500,9 +511,6 @@ class AnimateLibraryExporter
 			//
 			// }
 
-			// filled by glyph index as static text uses the glyphs (see addStaticText): the gaps must
-			// stay null on every target, as they are in the JSON, so the array is not an unboxed one
-			symbol.advances = new Array<Null<Int>>();
 			// symbol.advances = cast defineFont.fontAdvanceTable.copy ();
 			symbol.ascent = defineFont.ascent;
 			symbol.bold = defineFont.bold;
@@ -520,7 +528,7 @@ class AnimateLibraryExporter
 		return null;
 	}
 
-	private function addShape(tag:TagDefineShape):Dynamic
+	private function addShape(tag:TagDefineShape):AnimateDocumentSymbol
 	{
 		var handler = new ShapeCommandExporter(swfData);
 		tag.export(handler);
@@ -535,14 +543,12 @@ class AnimateLibraryExporter
 
 		if (bitmaps != null)
 		{
-			var symbol:Dynamic = {};
-			symbol.type = SWFSymbolType.SPRITE;
-			symbol.frames = [];
+			var symbol = new AnimateDocumentSprite();
 
-			var frame:Dynamic = {};
+			var frame = new AnimateDocumentFrame();
 			frame.objects = [];
 			var bitmap:BitmapFill;
-			var frameObject:Dynamic;
+			var frameObject:AnimateDocumentFrameObject;
 
 			for (i in 0...bitmaps.length)
 			{
@@ -550,7 +556,7 @@ class AnimateLibraryExporter
 
 				processTag(cast swfData.getCharacter(bitmap.id));
 
-				var bitmapSymbol:Dynamic = cast libraryData.symbols.get(bitmap.id);
+				var bitmapSymbol = #if (haxe_ver >= 4.0) Std.downcast #else Std.instance #end (libraryData.symbols.get(bitmap.id), AnimateDocumentBitmap);
 
 				if (bitmapSymbol != null)
 				{
@@ -566,9 +572,9 @@ class AnimateLibraryExporter
 					}
 				}
 
-				frameObject = {};
+				frameObject = new AnimateDocumentFrameObject();
 				frameObject.symbol = bitmap.id;
-				frameObject.type = SWFFrameObjectType.CREATE;
+				frameObject.type = AnimateFrameObjectType.CREATE;
 				frameObject.id = i;
 				frameObject.depth = i;
 				frameObject.clipDepth = 0;
@@ -586,8 +592,7 @@ class AnimateLibraryExporter
 		}
 		else
 		{
-			var symbol:Dynamic = {};
-			symbol.type = SWFSymbolType.SHAPE;
+			var symbol = new AnimateDocumentShape();
 			symbol.id = tag.characterId;
 
 			var commands:Array<Dynamic> = [];
@@ -599,11 +604,11 @@ class AnimateLibraryExporter
 					case LineStyle(thickness, color, alpha, pixelHinting, scaleMode, startCaps, joints, miterLimit):
 						if (thickness == null && color == null && alpha == null)
 						{
-							commands.push(SWFShapeCommandType.CLEAR_LINE_STYLE);
+							commands.push(AnimateShapeCommandType.CLEAR_LINE_STYLE);
 						}
 						else
 						{
-							commands.push(SWFShapeCommandType.LINE_STYLE);
+							commands.push(AnimateShapeCommandType.LINE_STYLE);
 							commands.push(thickness);
 							commands.push(color);
 							commands.push(alpha);
@@ -615,12 +620,12 @@ class AnimateLibraryExporter
 						}
 
 					case BeginFill(color, alpha):
-						commands.push(SWFShapeCommandType.BEGIN_FILL);
+						commands.push(AnimateShapeCommandType.BEGIN_FILL);
 						commands.push(color);
 						commands.push(alpha);
 
 					case BeginGradientFill(type, colors, alphas, ratios, matrix, spreadMethod, interpolationMethod, focalPointRatio):
-						commands.push(SWFShapeCommandType.BEGIN_GRADIENT_FILL);
+						commands.push(AnimateShapeCommandType.BEGIN_GRADIENT_FILL);
 						commands.push(type);
 						commands.push(colors);
 						commands.push(alphas);
@@ -631,7 +636,7 @@ class AnimateLibraryExporter
 						commands.push(focalPointRatio);
 
 					case BeginBitmapFill(bitmapID, matrix, repeat, smooth):
-						commands.push(SWFShapeCommandType.BEGIN_BITMAP_FILL);
+						commands.push(AnimateShapeCommandType.BEGIN_BITMAP_FILL);
 						commands.push(bitmapID);
 						commands.push(serializeMatrix(matrix));
 						commands.push(repeat);
@@ -639,20 +644,20 @@ class AnimateLibraryExporter
 						processTag(cast swfData.getCharacter(bitmapID));
 
 					case EndFill:
-						commands.push(SWFShapeCommandType.END_FILL);
+						commands.push(AnimateShapeCommandType.END_FILL);
 
 					case MoveTo(x, y):
-						commands.push(SWFShapeCommandType.MOVE_TO);
+						commands.push(AnimateShapeCommandType.MOVE_TO);
 						commands.push(twip(x));
 						commands.push(twip(y));
 
 					case LineTo(x, y):
-						commands.push(SWFShapeCommandType.LINE_TO);
+						commands.push(AnimateShapeCommandType.LINE_TO);
 						commands.push(twip(x));
 						commands.push(twip(y));
 
 					case CurveTo(controlX, controlY, anchorX, anchorY):
-						commands.push(SWFShapeCommandType.CURVE_TO);
+						commands.push(AnimateShapeCommandType.CURVE_TO);
 						commands.push(twip(controlX));
 						commands.push(twip(controlY));
 						commands.push(twip(anchorX));
@@ -668,11 +673,9 @@ class AnimateLibraryExporter
 		}
 	}
 
-	private function addSprite(tag:SWFTimelineContainer, root:Bool = false):Dynamic
+	private function addSprite(tag:SWFTimelineContainer, root:Bool = false):AnimateDocumentSprite
 	{
-		var symbol:Dynamic = {};
-		symbol.type = SWFSymbolType.SPRITE;
-		symbol.frames = [];
+		var symbol = new AnimateDocumentSprite();
 
 		if (#if (haxe_ver >= 4.2) Std.isOfType #else Std.is #end (tag, IDefinitionTag))
 		{
@@ -683,11 +686,11 @@ class AnimateLibraryExporter
 		var lastModified = new Map<Int, Int>();
 		var zeroCharacter = -1;
 
-		var frame:Dynamic, frameObject:Dynamic, frameData:Frame, placeTag:TagPlaceObject;
+		var frame:AnimateDocumentFrame, frameObject:AnimateDocumentFrameObject, frameData:Frame, placeTag:TagPlaceObject;
 
 		for (frameData in tag.frames)
 		{
-			frame = {};
+			frame = new AnimateDocumentFrame();
 
 			if (frameData.labels != null)
 			{
@@ -721,18 +724,18 @@ class AnimateLibraryExporter
 					continue;
 				}
 
-				frameObject = {};
+				frameObject = new AnimateDocumentFrameObject();
 				frameObject.symbol = object.characterId;
 				frameObject.id = object.placedAtIndex;
 				frameObject.name = placeTag.instanceName;
 
 				if (!lastModified.exists(object.placedAtIndex))
 				{
-					frameObject.type = SWFFrameObjectType.CREATE;
+					frameObject.type = AnimateFrameObjectType.CREATE;
 				}
 				else
 				{
-					frameObject.type = SWFFrameObjectType.UPDATE;
+					frameObject.type = AnimateFrameObjectType.UPDATE;
 				}
 
 				if (placeTag.matrix != null)
@@ -795,9 +798,9 @@ class AnimateLibraryExporter
 			{
 				lastModified.remove(id);
 
-				frameObject = {};
+				frameObject = new AnimateDocumentFrameObject();
 				frameObject.id = id;
-				frameObject.type = SWFFrameObjectType.DESTROY;
+				frameObject.type = AnimateFrameObjectType.DESTROY;
 
 				if (frame.objects == null)
 				{
@@ -844,10 +847,9 @@ class AnimateLibraryExporter
 		return symbol;
 	}
 
-	private function addDynamicText(tag:TagDefineEditText):Dynamic
+	private function addDynamicText(tag:TagDefineEditText):AnimateDocumentDynamicText
 	{
-		var symbol:Dynamic = {};
-		symbol.type = SWFSymbolType.DYNAMIC_TEXT;
+		var symbol = new AnimateDocumentDynamicText();
 
 		symbol.id = tag.characterId;
 		symbol.border = tag.border;
@@ -918,20 +920,19 @@ class AnimateLibraryExporter
 		return symbol;
 	}
 
-	private function addStaticText(tag:TagDefineText):Dynamic
+	private function addStaticText(tag:TagDefineText):AnimateDocumentStaticText
 	{
-		var symbol:Dynamic = {};
-		symbol.type = SWFSymbolType.STATIC_TEXT;
+		var symbol = new AnimateDocumentStaticText();
 		symbol.id = tag.characterId;
 
 		var records = [];
 
-		var font:Dynamic = null;
+		var font:AnimateDocumentFont = null;
 		var defineFont:TagDefineFont2 = null;
 
 		for (record in tag.records)
 		{
-			var textRecord:Dynamic = {};
+			var textRecord = new AnimateDocumentTextRecord();
 
 			if (record.hasFont)
 			{
@@ -939,7 +940,7 @@ class AnimateLibraryExporter
 
 				defineFont = cast swfData.getCharacter(record.fontId);
 				processTag(defineFont);
-				font = cast libraryData.symbols.get(record.fontId);
+				font = #if (haxe_ver >= 4.0) Std.downcast #else Std.instance #end (libraryData.symbols.get(record.fontId), AnimateDocumentFont);
 			}
 
 			if (record.hasColor) textRecord.color = record.textColor;
@@ -976,11 +977,11 @@ class AnimateLibraryExporter
 								case LineStyle(thickness, color, alpha, pixelHinting, scaleMode, startCaps, joints, miterLimit):
 									if (thickness == null && color == null && alpha == null)
 									{
-										commands.push(SWFShapeCommandType.CLEAR_LINE_STYLE);
+										commands.push(AnimateShapeCommandType.CLEAR_LINE_STYLE);
 									}
 									else
 									{
-										commands.push(SWFShapeCommandType.LINE_STYLE);
+										commands.push(AnimateShapeCommandType.LINE_STYLE);
 										commands.push(thickness);
 										commands.push(color);
 										commands.push(alpha);
@@ -992,12 +993,12 @@ class AnimateLibraryExporter
 									}
 
 								case BeginFill(color, alpha):
-									commands.push(SWFShapeCommandType.BEGIN_FILL);
+									commands.push(AnimateShapeCommandType.BEGIN_FILL);
 									commands.push(color);
 									commands.push(alpha);
 
 								case BeginGradientFill(type, colors, alphas, ratios, matrix, spreadMethod, interpolationMethod, focalPointRatio):
-									commands.push(SWFShapeCommandType.BEGIN_GRADIENT_FILL);
+									commands.push(AnimateShapeCommandType.BEGIN_GRADIENT_FILL);
 									commands.push(type);
 									commands.push(colors);
 									commands.push(alphas);
@@ -1008,7 +1009,7 @@ class AnimateLibraryExporter
 									commands.push(focalPointRatio);
 
 								case BeginBitmapFill(bitmapID, matrix, repeat, smooth):
-									commands.push(SWFShapeCommandType.BEGIN_BITMAP_FILL);
+									commands.push(AnimateShapeCommandType.BEGIN_BITMAP_FILL);
 									commands.push(bitmapID);
 									commands.push(serializeMatrix(matrix));
 									commands.push(repeat);
@@ -1016,20 +1017,20 @@ class AnimateLibraryExporter
 									processTag(cast swfData.getCharacter(bitmapID));
 
 								case EndFill:
-									commands.push(SWFShapeCommandType.END_FILL);
+									commands.push(AnimateShapeCommandType.END_FILL);
 
 								case MoveTo(x, y):
-									commands.push(SWFShapeCommandType.MOVE_TO);
+									commands.push(AnimateShapeCommandType.MOVE_TO);
 									commands.push(twip(x));
 									commands.push(twip(y));
 
 								case LineTo(x, y):
-									commands.push(SWFShapeCommandType.LINE_TO);
+									commands.push(AnimateShapeCommandType.LINE_TO);
 									commands.push(twip(x));
 									commands.push(twip(y));
 
 								case CurveTo(controlX, controlY, anchorX, anchorY):
-									commands.push(SWFShapeCommandType.CURVE_TO);
+									commands.push(AnimateShapeCommandType.CURVE_TO);
 									commands.push(twip(controlX));
 									commands.push(twip(controlY));
 									commands.push(twip(anchorX));
@@ -1152,7 +1153,7 @@ class AnimateLibraryExporter
 			var templateData = null;
 			var baseClassName = null;
 
-			var type:SWFSymbolType = symbol.type;
+			var type = symbol.type;
 
 			if (type == BITMAP)
 			{
@@ -1161,10 +1162,7 @@ class AnimateLibraryExporter
 			else if (type == SPRITE)
 			{
 				templateData = movieClipTemplate;
-				if (Reflect.hasField(symbol, "baseClassName"))
-				{
-					baseClassName = symbol.baseClassName;
-				}
+				baseClassName = symbol.baseClassName;
 			}
 			else if (type == BUTTON)
 			{
@@ -1175,7 +1173,7 @@ class AnimateLibraryExporter
 				continue;
 			}
 
-			if (templateData != null && Reflect.hasField(symbol, "className") && symbol.className != null)
+			if (templateData != null && symbol.className != null)
 			{
 				var className:String = symbol.className;
 				className = SymbolUtils.formatClassName(className, prefix);
@@ -1205,28 +1203,27 @@ class AnimateLibraryExporter
 
 				if (type == SPRITE)
 				{
-					var spriteSymbol:Dynamic = cast symbol;
-					var frames:Array<Dynamic> = cast spriteSymbol.frames;
+					var frames = cast(symbol, AnimateDocumentSprite).frames;
 
-					if (frames.length > 0 && Reflect.hasField(frames[0], "objects"))
+					if (frames.length > 0 && frames[0].objects != null)
 					{
 						for (frame in frames)
 						{
-							var objects:Array<Dynamic> = cast frame.objects;
+							var objects = frame.objects;
 							if (objects != null)
 							{
 								for (object in objects)
 								{
-									if (Reflect.hasField(object, "name") && object.name != null && !objectReferences.exists(object.name))
+									if (object.name != null && !objectReferences.exists(object.name))
 									{
 										if (libraryData.symbols.exists(object.symbol))
 										{
 											var childSymbol = libraryData.symbols.get(object.symbol);
-											var childClassName = Reflect.hasField(childSymbol, "className") ? childSymbol.className : null;
+											var childClassName = childSymbol.className;
 
 											if (childClassName == null)
 											{
-												var childType:SWFSymbolType = cast childSymbol.type;
+												var childType = childSymbol.type;
 												if (childType == SPRITE)
 												{
 													childClassName = "openfl.display.MovieClip";
@@ -1328,7 +1325,7 @@ class AnimateLibraryExporter
 		}
 	}
 
-	private function processTag(tag:IDefinitionTag):Dynamic
+	private function processTag(tag:IDefinitionTag):AnimateDocumentSymbol
 	{
 		if (tag == null) return null;
 
@@ -1408,14 +1405,14 @@ class AnimateLibraryExporter
 				switch (type)
 				{
 					case BlurFilter(blurX, blurY, quality):
-						result.push([SWFFilterType.BLUR, blurX, blurY, quality]);
+						result.push([AnimateFilterType.BLUR, blurX, blurY, quality]);
 
 					case ColorMatrixFilter(matrix):
-						result.push([SWFFilterType.COLOR_MATRIX, matrix]);
+						result.push([AnimateFilterType.COLOR_MATRIX, matrix]);
 
 					case DropShadowFilter(distance, angle, color, alpha, blurX, blurY, strength, quality, inner, knockout, hideObject):
 						result.push([
-							SWFFilterType.DROP_SHADOW,
+							AnimateFilterType.DROP_SHADOW,
 							distance,
 							angle,
 							color,
@@ -1431,7 +1428,7 @@ class AnimateLibraryExporter
 
 					case GlowFilter(color, alpha, blurX, blurY, strength, quality, inner, knockout):
 						result.push([
-							SWFFilterType.GLOW,
+							AnimateFilterType.GLOW,
 							color,
 							alpha,
 							blurX,
@@ -1444,7 +1441,7 @@ class AnimateLibraryExporter
 
 					case GradientGlowFilter(distance, angle, colors, alphas, ratios, blurX, blurY, strength, quality, type, knockout):
 						result.push([
-							SWFFilterType.GRADIENT_GLOW,
+							AnimateFilterType.GRADIENT_GLOW,
 							distance,
 							angle,
 							colors,
@@ -1460,7 +1457,7 @@ class AnimateLibraryExporter
 
 					case GradientBevelFilter(distance, angle, colors, alphas, ratios, blurX, blurY, strength, quality, type, knockout):
 						result.push([
-							SWFFilterType.GRADIENT_BEVEL,
+							AnimateFilterType.GRADIENT_BEVEL,
 							distance,
 							angle,
 							colors,
@@ -1514,89 +1511,4 @@ private enum SoundType
 	NELLYMOSER_8_KHZ;
 	NELLYMOSER;
 	SPEEX;
-}
-
-private class SWFDocument
-{
-	public var frameRate:Float;
-	public var uuid:String;
-	public var root:Dynamic;
-	public var symbols:Map<Int, Dynamic>;
-
-	// public var version:Int;
-
-	public function new()
-	{
-		symbols = new Map();
-	}
-
-	public function serialize():Dynamic
-	{
-		var output:Dynamic = {};
-		output.frameRate = frameRate;
-		output.uuid = uuid;
-		output.root = 0;
-		output.version = 0.1;
-		output.symbols = symbolList();
-
-		return AnimateJsonWriter.stringify(output);
-	}
-
-	/** The root, then the symbols by ascending id: the order both documents store, the same on every target. **/
-	public function symbolList():Array<Dynamic>
-	{
-		var ids = [for (key in symbols.keys()) key];
-		ids.sort(function(a, b) return a - b);
-		var list:Array<Dynamic> = [root];
-		for (id in ids)
-		{
-			list.push(symbols.get(id));
-		}
-		return list;
-	}
-}
-
-#if (haxe_ver < 4.0) @:enum #end
-private #if (haxe_ver >= 4.0) enum #end abstract SWFFrameObjectType(Int) from Int to Int
-{
-	public var CREATE = 0;
-	public var UPDATE = 1;
-	public var DESTROY = 2;
-}
-
-#if (haxe_ver < 4.0) @:enum #end
-private #if (haxe_ver >= 4.0) enum #end abstract SWFShapeCommandType(Int) from Int to Int
-{
-	public var BEGIN_BITMAP_FILL = 0;
-	public var BEGIN_FILL = 1;
-	public var BEGIN_GRADIENT_FILL = 2;
-	public var CLEAR_LINE_STYLE = 3;
-	public var CURVE_TO = 4;
-	public var END_FILL = 5;
-	public var LINE_STYLE = 6;
-	public var LINE_TO = 7;
-	public var MOVE_TO = 8;
-}
-
-#if (haxe_ver < 4.0) @:enum #end
-private #if (haxe_ver >= 4.0) enum #end abstract SWFSymbolType(Int) from Int to Int
-{
-	public var BITMAP = 0;
-	public var BUTTON = 1;
-	public var DYNAMIC_TEXT = 2;
-	public var FONT = 3;
-	public var SHAPE = 4;
-	public var SPRITE = 5;
-	public var STATIC_TEXT = 6;
-}
-
-#if (haxe_ver < 4.0) @:enum #end
-private #if (haxe_ver >= 4.0) enum #end abstract SWFFilterType(Int) from Int to Int
-{
-	public var BLUR = 0;
-	public var COLOR_MATRIX = 1;
-	public var DROP_SHADOW = 2;
-	public var GLOW = 3;
-	public var GRADIENT_GLOW = 4;
-	public var GRADIENT_BEVEL = 5;
 }
