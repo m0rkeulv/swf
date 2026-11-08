@@ -1,6 +1,7 @@
 package tests;
 
 import haxe.Json;
+import openfl.filters.BitmapFilterType;
 import openfl.utils.Assets;
 import swf.exporters.animate.AnimateFilterType;
 import swf.exporters.animate.AnimateFrameObjectType;
@@ -242,7 +243,14 @@ class AnimateBinaryTest extends Test
 			[AnimateFilterType.BLUR, 4, 4, 1],
 			[AnimateFilterType.COLOR_MATRIX, [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.5, 0]],
 			[AnimateFilterType.DROP_SHADOW, 4, 45, 0, 0.5, 4, 4, 1, 1, false, false, false],
-			[AnimateFilterType.GLOW, 0xFF0000, 0.8, 6, 6, 2, 2, true, false]
+			[AnimateFilterType.GLOW, 0xFF0000, 0.8, 6, 6, 2, 2, true, false],
+			[
+				AnimateFilterType.GRADIENT_GLOW, 4, 45, [0xFFFFFF, 0xFF0000], [0, 1], [0, 255], 8, 8, 1.5, 1, (BitmapFilterType.OUTER : String), false
+			],
+			[
+				AnimateFilterType.GRADIENT_BEVEL, 2, 135, [0xFFFFFF, 0x000000, 0x000000], [1, 0, 0.75], [0, 128, 255], 3, 3, 1, 2,
+				(BitmapFilterType.INNER : String), true
+			]
 		];
 		place.depth = 1;
 		place.clipDepth = 0;

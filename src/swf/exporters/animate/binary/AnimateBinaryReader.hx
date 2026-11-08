@@ -342,6 +342,12 @@ class AnimateBinaryReader
 						filter[10], filter[11]));
 				case GLOW:
 					result.push(FilterType.GlowFilter(filter[1], filter[2], filter[3], filter[4], filter[5], filter[6], filter[7], filter[8]));
+				case GRADIENT_GLOW:
+					result.push(FilterType.GradientGlowFilter(filter[1], filter[2], filter[3], filter[4], filter[5], filter[6], filter[7], filter[8],
+						filter[9], filter[10], filter[11]));
+				case GRADIENT_BEVEL:
+					result.push(FilterType.GradientBevelFilter(filter[1], filter[2], filter[3], filter[4], filter[5], filter[6], filter[7], filter[8],
+						filter[9], filter[10], filter[11]));
 				default:
 			}
 		}
