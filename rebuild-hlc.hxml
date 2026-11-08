@@ -1,0 +1,14 @@
+# The tool as HL/C sources, compiled to a native executable by `haxelib run swf rebuild hlc`
+# (see scripts/Rebuild.hx). no-compilation keeps Haxe from looking for the hashlink haxelib.
+-main Tools
+-hl obj/hlc/tool.c
+-D no-compilation
+-cp scripts
+-cp src
+-lib openfl
+-lib hxp
+-lib lime
+-lib format
+-D lime-cairo
+-D lime-cffi
+-D optional-cffi

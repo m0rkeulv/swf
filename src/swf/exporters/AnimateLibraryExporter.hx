@@ -7,6 +7,7 @@ import swf.data.consts.BlendMode;
 import swf.data.filters.IFilter;
 import swf.data.SWFButtonRecord;
 import swf.data.SWFSymbol;
+import swf.exporters.animate.AnimateJsonWriter;
 import swf.exporters.ShapeBitmapExporter;
 import swf.exporters.ShapeBitmapExporter.BitmapFill;
 import swf.exporters.ShapeCommandExporter;
@@ -143,7 +144,7 @@ class AnimateLibraryExporter
 		});
 
 		// var manifestJSON = manifestData.serialize();
-		var manifestJSON = Json.stringify(manifestData);
+		var manifestJSON = AnimateJsonWriter.stringify(manifestData);
 		var bytes = new ByteArray();
 		bytes.writeUTFBytes(manifestJSON);
 		var crc32 = Crc32.make(bytes);
@@ -499,7 +500,9 @@ class AnimateLibraryExporter
 			//
 			// }
 
-			symbol.advances = new Array<Int>();
+			// filled by glyph index as static text uses the glyphs (see addStaticText): the gaps must
+			// stay null on every target, as they are in the JSON, so the array is not an unboxed one
+			symbol.advances = new Array<Null<Int>>();
 			// symbol.advances = cast defineFont.fontAdvanceTable.copy ();
 			symbol.ascent = defineFont.ascent;
 			symbol.bold = defineFont.bold;
@@ -785,23 +788,23 @@ class AnimateLibraryExporter
 				frame.objects.push(frameObject);
 			}
 
-			for (id in lastModified.keys())
+			// in ascending order: a map's key order differs between targets, and the output must not
+			var destroyed = [for (id in lastModified.keys()) if (instances.indexOf(id) == -1) id];
+			destroyed.sort(function(a, b) return a - b);
+			for (id in destroyed)
 			{
-				if (instances.indexOf(id) == -1)
+				lastModified.remove(id);
+
+				frameObject = {};
+				frameObject.id = id;
+				frameObject.type = SWFFrameObjectType.DESTROY;
+
+				if (frame.objects == null)
 				{
-					lastModified.remove(id);
-
-					frameObject = {};
-					frameObject.id = id;
-					frameObject.type = SWFFrameObjectType.DESTROY;
-
-					if (frame.objects == null)
-					{
-						frame.objects = [];
-					}
-
-					frame.objects.push(frameObject);
+					frame.objects = [];
 				}
+
+				frame.objects.push(frameObject);
 			}
 
 			symbol.frames.push(frame);
@@ -1534,18 +1537,22 @@ private class SWFDocument
 		output.uuid = uuid;
 		output.root = 0;
 		output.version = 0.1;
+		output.symbols = symbolList();
 
-		var symbolArray = new Array<Dynamic>();
-		symbolArray.push(root);
+		return AnimateJsonWriter.stringify(output);
+	}
 
-		for (key in symbols.keys())
+	/** The root, then the symbols by ascending id: the order both documents store, the same on every target. **/
+	public function symbolList():Array<Dynamic>
+	{
+		var ids = [for (key in symbols.keys()) key];
+		ids.sort(function(a, b) return a - b);
+		var list:Array<Dynamic> = [root];
+		for (id in ids)
 		{
-			symbolArray.push(symbols.get(key));
+			list.push(symbols.get(id));
 		}
-
-		output.symbols = symbolArray;
-
-		return Json.stringify(output);
+		return list;
 	}
 }
 
