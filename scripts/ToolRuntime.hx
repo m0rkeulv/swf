@@ -73,6 +73,17 @@ class ToolRuntime
 		return Sys.command(hl, [runHL].concat(arguments));
 	}
 
+	/** The swf haxelib's folder, where run.n, run.hl and the templates are, found from the running tool itself. **/
+	public static function toolDirectory():String
+	{
+		var directory = Path.directory(Sys.programPath());
+		#if hl
+		// the HL/C executable sits three folders down, in bin/hlc/<platform>/ (see hlcExecutable)
+		if (!StringTools.endsWith(Sys.programPath(), ".hl")) directory = Path.directory(Path.directory(Path.directory(directory)));
+		#end
+		return directory;
+	}
+
 	/** Where `rebuild hlc` puts the native tool: bin/hlc/<platform>/swftool, with .exe on Windows. **/
 	public static function hlcExecutable(toolDirectory:String):String
 	{

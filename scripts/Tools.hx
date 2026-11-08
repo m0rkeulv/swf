@@ -501,6 +501,9 @@ class Tools
 		// hxp detects console colors through lime's CFFI, which HashLink does not have: decide as its
 		// fallback does, so that it never gets there
 		@:privateAccess Log.colorSupported = (Sys.getEnv("TERM") == "xterm" || Sys.getEnv("ANSICON") != null);
+		// the tool needs its own folder (the templates, run.n for the library cache), which hxp finds with
+		// `haxelib path`, a subprocess HashLink cannot start on Windows; it is where the tool runs from
+		Haxelib.setOverridePath(new Haxelib("swf"), ToolRuntime.toolDirectory());
 		#end
 
 		#if !nodejs
