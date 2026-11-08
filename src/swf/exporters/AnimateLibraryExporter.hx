@@ -1297,7 +1297,8 @@ class AnimateLibraryExporter
 				var template = new Template(templateData);
 
 				var templateFile = new Asset("", Path.combine(Path.combine(targetPath, Path.directory(className.split(".").join("/"))), name + ".hx"),
-					cast AssetType.TEMPLATE);
+					// the tools' own enum: a cast from openfl's String abstract fails on HashLink
+					lime.tools.AssetType.TEMPLATE);
 				templateFile.embed = false;
 				templateFile.data = template.execute(context);
 				output.push(templateFile);
