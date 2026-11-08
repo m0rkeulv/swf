@@ -10,8 +10,14 @@
 	<haxelib name="openfl"/>
 	<haxelib name="format"/>
 	<haxelib name="utest"/>
+	<!-- the library tags below need the swf handler, which lime finds through the haxelib (haxelib dev swf <this checkout>) -->
+	<haxelib name="swf"/>
 
 	<assets type="binary" path="fixtures/shapes.swf" preload="true"/>
+
+	<!-- the same SWF as a JSON bundle and as a binary bundle, for AnimateBinaryTest -->
+	<library path="fixtures/shapes.swf" name="shapes_json" type="animate" generate="false" preload="true"/>
+	<library path="fixtures/shapes.swf" name="shapes_binary" type="animate-binary" generate="false" preload="true"/>
 
 	<template path="templates" if="html5"/>
 </project>

@@ -4,6 +4,7 @@ import haxe.Json;
 import lime.graphics.Image;
 import lime.graphics.ImageChannel;
 import lime.math.Vector2;
+import swf.exporters.animate.binary.AnimateBinaryReader;
 import swf.exporters.core.FilterType;
 import openfl.display.MovieClip;
 import openfl.events.Event;
@@ -258,8 +259,6 @@ import openfl.filters.GlowFilter;
 			var symbolData:Array<Dynamic> = json.symbols;
 
 			var data:Dynamic, type:SWFSymbolType, symbol:AnimateSymbol = null;
-			var bitmapSymbol:AnimateBitmapSymbol;
-			var spriteSymbol:AnimateSpriteSymbol;
 
 			symbols = new Map();
 			symbolsByClassName = new Map();
@@ -274,10 +273,7 @@ import openfl.filters.GlowFilter;
 				switch (type)
 				{
 					case BITMAP:
-						bitmapSymbol = __parseBitmap(data);
-						bitmapSymbols.push(bitmapSymbol);
-						if (bitmapSymbol.className != null) bitmapClassNames.set(bitmapSymbol.className, bitmapSymbol.path);
-						symbol = bitmapSymbol;
+						symbol = __parseBitmap(data);
 					case BUTTON:
 						symbol = __parseButton(data);
 					case DYNAMIC_TEXT:
@@ -287,32 +283,38 @@ import openfl.filters.GlowFilter;
 					case SHAPE:
 						symbol = __parseShape(data);
 					case SPRITE:
-						spriteSymbol = __parseSprite(data);
-						if (i == rootIndex) root = spriteSymbol;
-						symbol = spriteSymbol;
+						symbol = __parseSprite(data);
 					case STATIC_TEXT:
 						symbol = __parseStaticText(data);
 					default:
 				}
 
 				if (symbol == null) continue;
-				symbols.set(symbol.id, symbol);
-				if (symbol.className != null)
-				{
-					symbolsByClassName.set(symbol.className, symbol);
-					#if (openfl > "9.1.0")
-					Assets.registerBinding(symbol.className, this);
-					#end
-				}
+				__addSymbol(symbol, i == rootIndex);
 			}
 
 			// SWFLite.instances.set(instanceID, swf);
 
-			__load().onProgress(promise.progress).onError(promise.error).onComplete(function(_)
+			__finishLoad(promise);
+		}
+
+		// an animate-binary bundle holds the same symbols as bytes (see AnimateBinaryReader)
+		var binary = StringTools.endsWith(id, ".bin");
+		var onCompleteBinary = function(bytes:Bytes)
+		{
+			var document = AnimateBinaryReader.read(bytes);
+			frameRate = document.frameRate;
+
+			symbols = new Map();
+			symbolsByClassName = new Map();
+			bitmapSymbols = new Array();
+
+			for (i in 0...document.symbols.length)
 			{
-				preloading = false;
-				promise.complete(this);
-			});
+				__addSymbol(document.symbols[i], i == document.rootIndex);
+			}
+
+			__finishLoad(promise);
 		}
 
 		if (exists(id, cast AssetType.TEXT) || exists(id, cast AssetType.BINARY))
@@ -332,7 +334,14 @@ import openfl.filters.GlowFilter;
 			}
 			#end
 
-			loadText(id).onError(promise.error).onComplete(onComplete);
+			if (binary)
+			{
+				loadBytes(id).onError(promise.error).onComplete(onCompleteBinary);
+			}
+			else
+			{
+				loadText(id).onError(promise.error).onComplete(onComplete);
+			}
 		}
 		else
 		{
@@ -353,12 +362,46 @@ import openfl.filters.GlowFilter;
 			}
 
 			var loader = new URLLoader();
-			loader.addEventListener(Event.COMPLETE, function(_) onComplete(loader.data));
+			if (binary) loader.dataFormat = BINARY;
+			loader.addEventListener(Event.COMPLETE, function(_) if (binary) onCompleteBinary(cast loader.data) else onComplete(loader.data));
 			loader.addEventListener(IOErrorEvent.IO_ERROR, function(e) promise.error(e));
 			loader.load(new URLRequest(path));
 		}
 
 		return promise.future;
+	}
+
+	/** Registers a symbol of the library, whichever bundle it came from; `isRoot` marks the root sprite. **/
+	private function __addSymbol(symbol:AnimateSymbol, isRoot:Bool):Void
+	{
+		if (#if (haxe_ver >= 4.2) Std.isOfType #else Std.is #end (symbol, AnimateBitmapSymbol))
+		{
+			var bitmapSymbol:AnimateBitmapSymbol = cast symbol;
+			bitmapSymbols.push(bitmapSymbol);
+			if (bitmapSymbol.className != null) bitmapClassNames.set(bitmapSymbol.className, bitmapSymbol.path);
+		}
+		else if (isRoot && #if (haxe_ver >= 4.2) Std.isOfType #else Std.is #end (symbol, AnimateSpriteSymbol))
+		{
+			root = cast symbol;
+		}
+
+		symbols.set(symbol.id, symbol);
+		if (symbol.className != null)
+		{
+			symbolsByClassName.set(symbol.className, symbol);
+			#if (openfl > "9.1.0")
+			Assets.registerBinding(symbol.className, this);
+			#end
+		}
+	}
+
+	private function __finishLoad(promise:Promise<lime.utils.AssetLibrary>):Void
+	{
+		__load().onProgress(promise.progress).onError(promise.error).onComplete(function(_)
+		{
+			preloading = false;
+			promise.complete(this);
+		});
 	}
 	#end
 

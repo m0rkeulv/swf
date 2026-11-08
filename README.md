@@ -21,6 +21,10 @@ There are three primary code paths within the library:
 
  Type "animate" is the latest exporter format, and the default for all targets. It combines the benefits of the "swflite" format while writing to JSON and compressing all assets into a single ZIP file. It can be iteratively improved while maintaining backward compatibility. The Macromedia SWF format also has these benefits, however it is optimized for a runtime different from modern web browsers. For example, images in a Macromedia SWF file may have premultiplied alpha applied to bitmaps already. There is no quick way to render this properly using HTML5 canvas. The Animate library format offers an opportunity for to pre-process SWF content into a flexible format optimized for modern production-use.
 
+ 4. Animate, binary
+
+ Type "animate-binary" is the "animate" format with its document stored as `data.bin` instead of `data.json`: the same symbols, written by `AnimateBinaryWriter` and read by `AnimateBinaryReader` straight into the library without a text parse. On native targets, where `Json.parse` is written in Haxe, loading a vector-heavy library is around eight times faster; browsers parse JSON natively, so "animate" stays the better choice for html5. Pick per target with `if` / `unless` on the library tag. Everything else is shared with "animate": the ZIP, the bitmaps, `generate`, `AnimateLibrary` and its API.
+
 This library can be called automatically by the OpenFL/Lime command-line tools to process `<library />` tags, or it can be used on the command-line to process SWF files into Animate ZIP files.
 
 
@@ -32,6 +36,13 @@ First, make sure that `<haxelib name="swf" />` has been added to your project.
 Then, you can add `<library path="to/your.swf" preload="true" />` to include a SWF library. This will be available at runtime using the file name of the SWF (minus the ".swf") or you can add `id="my-unique-id"` to specify a custom name.
 
 There is a (beta) option for `generate="true"` to generate Haxe classes for each "Export for ActionScript" type in the SWF file. The `preload` is also optional, but is recommended to simplify use.
+
+To load the binary document on native targets and the JSON one on the web, give the same SWF both types:
+
+```xml
+<library path="to/your.swf" type="animate" if="html5" />
+<library path="to/your.swf" type="animate-binary" unless="html5" />
+```
 
 You can create an "Export for ActionScript" clip from a SWF like this:
 
@@ -59,7 +70,24 @@ haxelib run swf process path/to/swfs
 haxelib run swf process test.swf
 haxelib run swf process test.swf path/to/test.zip
 haxelib run swf process test.swf output/path
+haxelib run swf process -binary test.swf
 ```
+
+`-binary` writes the "animate-binary" document (`data.bin`) instead of `data.json`; the ZIP loads the same way.
+
+
+Running the tool on HashLink
+============================
+
+The tool runs on Neko by default. It can run on HashLink instead, which is several times faster on large SWFs and has no fixed heap limit, and it writes the same bundles byte for byte. Turn it on for every build with
+
+    lime config SWF_RUNTIME hl
+
+or for one session with the environment variable `SWF_RUNTIME=hl`, or for one command with `haxelib run swf process -hashlink ...`; `-neko` or `SWF_RUNTIME=neko` forces Neko. HashLink itself comes from Lime: the runtime it ships for the host, with `lime.hdll` from its `ndll` folder, or else `hl` on the PATH. When `run.hl` is missing, the tool runs on Neko with a warning.
+
+The tool can also run as a native executable compiled from HL/C, which starts faster than HashLink and is otherwise the same tool. `haxelib run swf rebuild hlc` builds it into `bin/hlc/<platform>/` with the host's C compiler (Visual Studio's C++ tools on Windows, gcc or clang elsewhere); `lime config SWF_RUNTIME hlc`, `SWF_RUNTIME=hlc` or `-hlc` selects it. When it has not been built, the tool runs on HashLink with a warning.
+
+`haxelib run swf rebuild` builds the tool for every runtime, or for one of them (`neko`, `hl` or `hlc`); `haxe rebuild.hxml` builds just `run.n` and `run.hl`.
 
 For example:
 
@@ -115,6 +143,8 @@ Rebuild the SWF library tools:
     # or
     cd swf
     haxe rebuild.hxml
+    # the HashLink and native builds of the tool as well (see "Running the tool on HashLink")
+    haxelib run swf rebuild
     ```
 
 To return to release builds:
