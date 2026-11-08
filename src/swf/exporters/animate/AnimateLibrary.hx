@@ -4,6 +4,7 @@ import haxe.Json;
 import lime.graphics.Image;
 import lime.graphics.ImageChannel;
 import lime.math.Vector2;
+import swf.exporters.animate.binary.AnimateBinaryReader;
 import swf.exporters.core.FilterType;
 import openfl.display.MovieClip;
 import openfl.events.Event;

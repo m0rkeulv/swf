@@ -1,4 +1,4 @@
-package swf.exporters.animate;
+package swf.exporters.animate.binary;
 
 import haxe.Json;
 import haxe.io.Bytes;
@@ -6,9 +6,10 @@ import haxe.io.BytesInput;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
-import swf.exporters.animate.AnimateBinaryWriter.*;
+import swf.exporters.animate.*;
 import swf.exporters.animate.AnimateShapeCommand;
 import swf.exporters.animate.AnimateStaticTextSymbol.StaticTextRecord;
+import swf.exporters.animate.binary.AnimateBinaryWriter.*;
 import swf.exporters.core.FilterType;
 
 typedef AnimateBinaryDocument =
@@ -57,7 +58,7 @@ class AnimateBinaryReader
 
 	private function symbol():AnimateSymbol
 	{
-		var type = input.readByte();
+		var type:AnimateSymbolType = input.readByte();
 		input.readInt32(); // the body length, for a reader that skips symbols
 		var id = nint();
 		// the exporter names every symbol that has a linkage, but the JSON loader reads the name for
@@ -66,7 +67,7 @@ class AnimateBinaryReader
 		var className = str();
 		var symbol:AnimateSymbol = switch (type)
 		{
-			case 0: // BITMAP
+			case BITMAP:
 				var bitmap = new AnimateBitmapSymbol();
 				bitmap.className = className;
 				bitmap.path = str();
@@ -74,7 +75,7 @@ class AnimateBinaryReader
 				var smooth = nbool();
 				if (smooth != null) bitmap.smooth = smooth;
 				bitmap;
-			case 1: // BUTTON
+			case BUTTON:
 				var button = new AnimateButtonSymbol();
 				button.className = className;
 				button.downState = optionalSprite();
@@ -82,19 +83,19 @@ class AnimateBinaryReader
 				button.overState = optionalSprite();
 				button.upState = optionalSprite();
 				button;
-			case 2: // DYNAMIC_TEXT
+			case DYNAMIC_TEXT:
 				dynamicText();
-			case 3: // FONT
+			case FONT:
 				font();
-			case 4: // SHAPE
+			case SHAPE:
 				var shape = new AnimateShapeSymbol();
 				shape.commands = commands();
 				shape;
-			case 5: // SPRITE
+			case SPRITE:
 				var sprite = new AnimateSpriteSymbol();
 				sprite.className = className;
 				spriteBody(sprite);
-			case 6: // STATIC_TEXT
+			case STATIC_TEXT:
 				staticText();
 			default:
 				throw 'AnimateBinaryReader: unknown symbol type $type';
@@ -268,17 +269,18 @@ class AnimateBinaryReader
 		var commands:Array<AnimateShapeCommand> = [];
 		for (i in 0...count)
 		{
-			switch (input.readByte())
+			var op:AnimateShapeCommandType = input.readByte();
+			switch (op)
 			{
-				case 0:
+				case BEGIN_BITMAP_FILL:
 					var bitmap = input.readInt32();
 					var m = matrix();
 					var repeat = nbool();
 					commands.push(BeginBitmapFill(bitmap, m, repeat, nbool()));
-				case 1:
+				case BEGIN_FILL:
 					var color = input.readInt32();
 					commands.push(BeginFill(color, input.readDouble()));
-				case 2:
+				case BEGIN_GRADIENT_FILL:
 					var fillType = value();
 					var colors = ints();
 					var alphas = floats();
@@ -287,16 +289,16 @@ class AnimateBinaryReader
 					var spreadMethod = value();
 					var interpolationMethod = value();
 					commands.push(BeginGradientFill(fillType, colors, alphas, ratios, m, spreadMethod, interpolationMethod, value()));
-				case 3:
+				case CLEAR_LINE_STYLE:
 					commands.push(LineStyle(null, null, null, null, null, null, null, null));
-				case 4:
+				case CURVE_TO:
 					var controlX = pixel(input.readInt32());
 					var controlY = pixel(input.readInt32());
 					var anchorX = pixel(input.readInt32());
 					commands.push(CurveTo(controlX, controlY, anchorX, pixel(input.readInt32())));
-				case 5:
+				case END_FILL:
 					commands.push(EndFill);
-				case 6:
+				case LINE_STYLE:
 					var thickness = value();
 					var color = value();
 					var alpha = value();
@@ -305,13 +307,13 @@ class AnimateBinaryReader
 					var caps = value();
 					var joints = value();
 					commands.push(LineStyle(thickness, color, alpha, pixelHinting, scaleMode, caps, joints, value()));
-				case 7:
+				case LINE_TO:
 					var x = pixel(input.readInt32());
 					commands.push(LineTo(x, pixel(input.readInt32())));
-				case 8:
+				case MOVE_TO:
 					var x = pixel(input.readInt32());
 					commands.push(MoveTo(x, pixel(input.readInt32())));
-				case op:
+				default:
 					throw 'AnimateBinaryReader: unknown shape command $op';
 			}
 		}
@@ -328,16 +330,17 @@ class AnimateBinaryReader
 		{
 			var filter:Array<Dynamic> = value();
 			if (filter == null || filter.length == 0) continue;
-			switch (filter[0])
+			var type:AnimateFilterType = filter[0];
+			switch (type)
 			{
-				case 0:
+				case BLUR:
 					result.push(FilterType.BlurFilter(filter[1], filter[2], filter[3]));
-				case 1:
+				case COLOR_MATRIX:
 					result.push(FilterType.ColorMatrixFilter(filter[1]));
-				case 2:
+				case DROP_SHADOW:
 					result.push(FilterType.DropShadowFilter(filter[1], filter[2], filter[3], filter[4], filter[5], filter[6], filter[7], filter[8], filter[9],
 						filter[10], filter[11]));
-				case 3:
+				case GLOW:
 					result.push(FilterType.GlowFilter(filter[1], filter[2], filter[3], filter[4], filter[5], filter[6], filter[7], filter[8]));
 				default:
 			}

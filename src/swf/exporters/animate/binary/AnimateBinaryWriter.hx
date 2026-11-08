@@ -1,13 +1,16 @@
-package swf.exporters.animate;
+package swf.exporters.animate.binary;
 
-import haxe.Json;
 import haxe.io.Bytes;
 import haxe.io.BytesOutput;
+import swf.exporters.animate.AnimateShapeCommandType;
+import swf.exporters.animate.AnimateSymbolType;
+import swf.exporters.animate.document.*;
+import swf.exporters.animate.json.AnimateJsonWriter;
 
 /**
-	Writes the `data.bin` of an `animate-binary` bundle. It takes what the JSON bundle is made from, the
-	root sprite and the symbols as the anonymous objects `AnimateLibraryExporter` builds, so the two
-	bundles hold the same data; `AnimateBinaryReader` turns it back into symbols.
+	Writes the `data.bin` of an `animate-binary` bundle from the `AnimateDocument` the exporter builds,
+	the same document `AnimateJsonWriter` writes as `data.json`, so the two bundles hold the same data;
+	`AnimateBinaryReader` turns it back into symbols.
 
 	Layout, little-endian:
 
@@ -19,12 +22,12 @@ import haxe.io.BytesOutput;
 	Scalars: `str` is an i32 length (-1 for null) and UTF-8 bytes; `nint`/`nfloat` are a u8 presence
 	flag and the number; `nbool` is one u8 (0 absent, 1 false, 2 true); `ints`/`floats` are an i32
 	count (-1 for null), a u8 flag and the numbers, each behind a presence byte when the flag says the
-	array holds nulls; `value` is a tagged scalar or array (see `TAG_*`) for the fields whose type
-	varies. A field the JSON would leave out is written as absent, so the reader assigns exactly the
-	fields `Json.parse` would have provided.
+	array holds nulls; `value` is a tagged scalar or array (see `TAG_*`) for the operands whose type
+	varies. A field that is null is written as absent, so the reader assigns exactly the fields the
+	JSON loader would have found.
 
-	Shape commands are an i32 count and one record per command: a u8 opcode (the `SWFShapeCommandType`
-	numbers the JSON uses) and typed operands, coordinates as i32 twips.
+	Shape commands are an i32 count and one record per command: a u8 opcode (`AnimateShapeCommandType`,
+	as the JSON holds it) and typed operands, coordinates as i32 twips.
 **/
 class AnimateBinaryWriter
 {
@@ -42,8 +45,8 @@ class AnimateBinaryWriter
 
 	private var out:BytesOutput;
 
-	/** `symbols` in document order, the root first, as `serialize()` lists them for the JSON. **/
-	public static function write(frameRate:Float, uuid:String, symbols:Array<Dynamic>):Bytes
+	/** `symbols` in document order, the root first (see `AnimateDocument.symbolList`). **/
+	public static function write(frameRate:Float, uuid:String, symbols:Array<AnimateDocumentSymbol>):Bytes
 	{
 		var writer = new AnimateBinaryWriter();
 		var out = writer.out;
@@ -66,146 +69,144 @@ class AnimateBinaryWriter
 
 	// ------------------------------------------------------------------------------------ symbols
 
-	private function symbol(data:Dynamic):Void
+	private function symbol(symbol:AnimateDocumentSymbol):Void
 	{
-		var type = Std.int(field(data, "type"));
 		var outer = out;
 		out = new BytesOutput();
 		out.bigEndian = false;
-		nint(field(data, "id"));
-		str(field(data, "className"));
-		switch (type)
+		nint(symbol.id);
+		str(symbol.className);
+		switch (symbol.type)
 		{
-			case 0: // BITMAP
-				str(field(data, "path"));
-				str(field(data, "alpha"));
-				nbool(field(data, "smooth"));
-			case 1: // BUTTON
-				for (state in ["downState", "hitState", "overState", "upState"])
+			case BITMAP:
+				var bitmap:AnimateDocumentBitmap = cast symbol;
+				str(bitmap.path);
+				str(bitmap.alpha);
+				nbool(bitmap.smooth);
+			case BUTTON:
+				var button:AnimateDocumentButton = cast symbol;
+				for (state in [button.downState, button.hitState, button.overState, button.upState])
 				{
-					var sprite = field(data, state);
-					out.writeByte(sprite != null ? 1 : 0);
-					if (sprite != null)
+					out.writeByte(state != null ? 1 : 0);
+					if (state != null)
 					{
-						nint(field(sprite, "id"));
-						str(field(sprite, "className"));
-						spriteBody(sprite);
+						nint(state.id);
+						str(state.className);
+						spriteBody(state);
 					}
 				}
-			case 2: // DYNAMIC_TEXT
-				str(field(data, "align"));
-				nbool(field(data, "border"));
-				nint(field(data, "color"));
-				nint(field(data, "fontHeight"));
-				nint(field(data, "fontID"));
-				str(field(data, "fontName"));
-				nbool(field(data, "html"));
-				nint(field(data, "indent"));
-				nbool(field(data, "input"));
-				nint(field(data, "leading"));
-				nint(field(data, "leftMargin"));
-				nbool(field(data, "multiline"));
-				nbool(field(data, "password"));
-				nint(field(data, "rightMargin"));
-				nbool(field(data, "selectable"));
-				str(field(data, "text"));
-				nbool(field(data, "wordWrap"));
-				ints(field(data, "rect"));
-			case 3: // FONT
-				ints(field(data, "advances"));
-				nint(field(data, "ascent"));
-				nbool(field(data, "bold"));
-				ints(field(data, "codes"));
-				nint(field(data, "descent"));
-				nbool(field(data, "italic"));
-				nint(field(data, "leading"));
-				str(field(data, "name"));
-				var glyphs:Array<Array<Dynamic>> = field(data, "glyphs");
-				out.writeInt32(glyphs == null ? -1 : glyphs.length);
-				if (glyphs != null)
+			case DYNAMIC_TEXT:
+				var text:AnimateDocumentDynamicText = cast symbol;
+				str(text.align);
+				nbool(text.border);
+				nint(text.color);
+				nint(text.fontHeight);
+				nint(text.fontID);
+				str(text.fontName);
+				nbool(text.html);
+				nint(text.indent);
+				nbool(text.input);
+				nint(text.leading);
+				nint(text.leftMargin);
+				nbool(text.multiline);
+				nbool(text.password);
+				nint(text.rightMargin);
+				nbool(text.selectable);
+				str(text.text);
+				nbool(text.wordWrap);
+				ints(text.rect);
+			case FONT:
+				var font:AnimateDocumentFont = cast symbol;
+				ints(font.advances);
+				nint(font.ascent);
+				nbool(font.bold);
+				ints(font.codes);
+				nint(font.descent);
+				nbool(font.italic);
+				nint(font.leading);
+				str(font.name);
+				out.writeInt32(font.glyphs == null ? -1 : font.glyphs.length);
+				if (font.glyphs != null)
 				{
-					for (glyph in glyphs)
+					for (glyph in font.glyphs)
 					{
 						out.writeByte(glyph != null ? 1 : 0);
 						if (glyph != null) commands(glyph);
 					}
 				}
-			case 4: // SHAPE
-				commands(field(data, "commands"));
-			case 5: // SPRITE
-				spriteBody(data);
-			case 6: // STATIC_TEXT
-				matrix(field(data, "matrix"));
-				var records:Array<Dynamic> = field(data, "records");
-				out.writeInt32(records == null ? -1 : records.length);
-				if (records != null)
+			case SHAPE:
+				var shape:AnimateDocumentShape = cast symbol;
+				commands(shape.commands);
+			case SPRITE:
+				spriteBody(cast symbol);
+			case STATIC_TEXT:
+				var text:AnimateDocumentStaticText = cast symbol;
+				matrix(text.matrix);
+				out.writeInt32(text.records == null ? -1 : text.records.length);
+				if (text.records != null)
 				{
-					for (record in records)
+					for (record in text.records)
 					{
-						ints(field(record, "advances"));
-						nint(field(record, "color"));
-						nint(field(record, "fontHeight"));
-						nint(field(record, "fontID"));
-						ints(field(record, "glyphs"));
-						ints(field(record, "offset"));
+						ints(record.advances);
+						nint(record.color);
+						nint(record.fontHeight);
+						nint(record.fontID);
+						ints(record.glyphs);
+						ints(record.offset);
 					}
 				}
 			default:
-				throw 'AnimateBinaryWriter: unknown symbol type $type';
+				throw "AnimateBinaryWriter: unknown symbol type " + symbol.type;
 		}
 		var body = out.getBytes();
 		out = outer;
-		out.writeByte(type);
+		out.writeByte(symbol.type);
 		out.writeInt32(body.length);
 		out.write(body);
 	}
 
 	/** The fields of a sprite after the common id and class name; a button state is one too. **/
-	private function spriteBody(data:Dynamic):Void
+	private function spriteBody(sprite:AnimateDocumentSprite):Void
 	{
-		str(field(data, "baseClassName"));
-		ints(field(data, "scale9Grid"));
-		var frames:Array<Dynamic> = field(data, "frames");
-		out.writeInt32(frames.length);
-		for (frame in frames)
+		str(sprite.baseClassName);
+		ints(sprite.scale9Grid);
+		out.writeInt32(sprite.frames.length);
+		for (frame in sprite.frames)
 		{
-			strs(field(frame, "labels"));
-			str(field(frame, "scriptSource"));
-			var objects:Array<Dynamic> = field(frame, "objects");
-			out.writeInt32(objects == null ? -1 : objects.length);
-			if (objects != null)
+			strs(frame.labels);
+			str(frame.scriptSource);
+			out.writeInt32(frame.objects == null ? -1 : frame.objects.length);
+			if (frame.objects != null)
 			{
-				for (object in objects)
+				for (object in frame.objects)
 					frameObject(object);
 			}
 		}
 	}
 
-	private function frameObject(data:Dynamic):Void
+	private function frameObject(object:AnimateDocumentFrameObject):Void
 	{
-		nint(field(data, "symbol"));
-		nint(field(data, "id"));
-		str(field(data, "name"));
-		out.writeByte(Std.int(field(data, "type")));
-		matrix(field(data, "matrix"));
-		ints(field(data, "colorTransform"));
-		var filters:Array<Dynamic> = field(data, "filters");
-		out.writeInt32(filters == null ? -1 : filters.length);
-		if (filters != null)
+		nint(object.symbol);
+		nint(object.id);
+		str(object.name);
+		out.writeByte(object.type);
+		matrix(object.matrix);
+		ints(object.colorTransform);
+		out.writeInt32(object.filters == null ? -1 : object.filters.length);
+		if (object.filters != null)
 		{
-			for (filter in filters)
+			for (filter in object.filters)
 				value(filter);
 		}
-		nint(field(data, "depth"));
-		nint(field(data, "clipDepth"));
-		nbool(field(data, "visible"));
-		str(field(data, "blendMode"));
-		nbool(field(data, "cacheAsBitmap"));
-		var metaData = field(data, "metaData");
-		str(metaData != null ? Json.stringify(metaData) : null);
+		nint(object.depth);
+		nint(object.clipDepth);
+		nbool(object.visible);
+		str(object.blendMode);
+		nbool(object.cacheAsBitmap);
+		str(object.metaData != null ? AnimateJsonWriter.value(object.metaData) : null);
 	}
 
-	/** The flat token array the JSON holds, as one record per command. **/
+	/** The flat token array the document holds, as one record per command. **/
 	private function commands(tokens:Array<Dynamic>):Void
 	{
 		var outer = out;
@@ -214,22 +215,22 @@ class AnimateBinaryWriter
 		var count = 0, i = 0;
 		while (i < tokens.length)
 		{
-			var op = Std.int(tokens[i]);
+			var op:AnimateShapeCommandType = Std.int(tokens[i]);
 			out.writeByte(op);
 			count++;
 			switch (op)
 			{
-				case 0: // BEGIN_BITMAP_FILL: bitmap, matrix, repeat, smooth
+				case BEGIN_BITMAP_FILL: // bitmap, matrix, repeat, smooth
 					out.writeInt32(Std.int(tokens[i + 1]));
 					matrix(tokens[i + 2]);
 					nbool(tokens[i + 3]);
 					nbool(tokens[i + 4]);
 					i += 5;
-				case 1: // BEGIN_FILL: color, alpha
+				case BEGIN_FILL: // color, alpha
 					out.writeInt32(Std.int(tokens[i + 1]));
 					out.writeDouble(tokens[i + 2] * 1.0);
 					i += 3;
-				case 2: // BEGIN_GRADIENT_FILL: type, colors, alphas, ratios, matrix, spread, interpolation, focal point
+				case BEGIN_GRADIENT_FILL: // type, colors, alphas, ratios, matrix, spread, interpolation, focal point
 					value(tokens[i + 1]);
 					ints(tokens[i + 2]);
 					floats(tokens[i + 3]);
@@ -239,22 +240,22 @@ class AnimateBinaryWriter
 					value(tokens[i + 7]);
 					value(tokens[i + 8]);
 					i += 9;
-				case 3, 5: // CLEAR_LINE_STYLE, END_FILL
+				case CLEAR_LINE_STYLE, END_FILL:
 					i++;
-				case 4: // CURVE_TO
+				case CURVE_TO:
 					for (k in 1...5)
 						out.writeInt32(Std.int(tokens[i + k]));
 					i += 5;
-				case 6: // LINE_STYLE: thickness, color, alpha, pixelHinting, scaleMode, caps, joints, miterLimit
+				case LINE_STYLE: // thickness, color, alpha, pixelHinting, scaleMode, caps, joints, miterLimit
 					for (k in 1...9)
 						value(tokens[i + k]);
 					i += 9;
-				case 7, 8: // LINE_TO, MOVE_TO
+				case LINE_TO, MOVE_TO:
 					out.writeInt32(Std.int(tokens[i + 1]));
 					out.writeInt32(Std.int(tokens[i + 2]));
 					i += 3;
 				default:
-					throw 'AnimateBinaryWriter: unknown shape command $op';
+					throw "AnimateBinaryWriter: unknown shape command " + op;
 			}
 		}
 		var body = out.getBytes();
@@ -264,11 +265,6 @@ class AnimateBinaryWriter
 	}
 
 	// ------------------------------------------------------------------------------------ scalars
-
-	private inline function field(object:Dynamic, name:String):Dynamic
-	{
-		return Reflect.field(object, name);
-	}
 
 	private function str(s:String):Void
 	{
@@ -292,10 +288,10 @@ class AnimateBinaryWriter
 		}
 	}
 
-	private function nint(v:Dynamic):Void
+	private function nint(v:Null<Int>):Void
 	{
 		out.writeByte(v != null ? 1 : 0);
-		if (v != null) out.writeInt32(Std.int(v));
+		if (v != null) out.writeInt32(v);
 	}
 
 	private function nbool(v:Null<Bool>):Void
@@ -305,7 +301,8 @@ class AnimateBinaryWriter
 
 	/**
 		An int array: the count (-1 for null), a flag, and the numbers; with the flag set, each number is
-		preceded by a presence byte, so an array that holds nulls (a font's code table can) keeps them.
+		preceded by a presence byte, so an array that holds nulls (the advance table of a font does) keeps
+		them.
 	**/
 	private function ints(list:Array<Dynamic>):Void
 	{
@@ -341,7 +338,7 @@ class AnimateBinaryWriter
 		return false;
 	}
 
-	/** [a, b, c, d, tx, ty] as the JSON holds it: four factors and two twip offsets. **/
+	/** [a, b, c, d, tx, ty] as the document holds it: four factors and two twip offsets. **/
 	private function matrix(values:Array<Dynamic>):Void
 	{
 		out.writeByte(values != null ? 1 : 0);
@@ -352,7 +349,7 @@ class AnimateBinaryWriter
 		out.writeInt32(Std.int(values[5]));
 	}
 
-	/** A scalar or array whose type the JSON does not fix, tagged so the reader gets the same value back. **/
+	/** An operand whose type the document does not fix, tagged so the reader gets the same value back. **/
 	private function value(v:Dynamic):Void
 	{
 		if (v == null)
@@ -395,7 +392,7 @@ class AnimateBinaryWriter
 		else
 		{
 			out.writeByte(TAG_JSON);
-			str(Json.stringify(v));
+			str(AnimateJsonWriter.value(v));
 		}
 	}
 }
